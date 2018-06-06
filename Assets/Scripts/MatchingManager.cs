@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System;
+using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -9,6 +10,8 @@ public class MatchingManager : MonoBehaviour {
     private Text messageText;
     [SerializeField]
     private Text statusText;
+
+    private bool startedMatching = false;
 
     private string ProgressDot {
         get {
@@ -24,42 +27,67 @@ public class MatchingManager : MonoBehaviour {
     }
 
     private void Awake() {
-        // this makes sure we can use PhotonNetwork.LoadLevel() on the master client and all clients in the same room sync their level automatically
         PhotonNetwork.automaticallySyncScene = true;
 
-        // the following line checks if this client was just created (and not yet online). if so, we connect
         if (PhotonNetwork.connectionStateDetailed == ClientState.PeerCreated) {
-            // Connect to the photon master-server. We use the settings saved in PhotonServerSettings (a .asset file in this project)
             PhotonNetwork.ConnectUsingSettings("1.0");
         }
 
-        // generate a name for this player, if none is assigned yet
         if (string.IsNullOrEmpty(PhotonNetwork.playerName)) {
-            PhotonNetwork.playerName = @"プレイヤー";
+            PhotonNetwork.playerName = @"Guest";
         }
 
         // if you wanted more debug out, turn this on:
-        // PhotonNetwork.logLevel = NetworkLogLevel.Full;
+        // PhotonNetwork.logLevel = PhotonLogLevel.Full;
     }
 
     private void Update() {
-        if (PhotonNetwork.inRoom && PhotonNetwork.countOfPlayersInRooms > 1) {
-            messageText.text = $"マッチングしました。";
-            statusText.text = $"ユーザー数: {PhotonNetwork.countOfPlayers}, 部屋数: {PhotonNetwork.countOfRooms}";
+        if (!startedMatching) {
+            return;
+        }
+
+        if (PhotonNetwork.inRoom && PhotonNetwork.room.PlayerCount > 1) {
+            messageText.text = @"マッチングしました!";
         } else {
-            messageText.text = $"マッチング中です{ ProgressDot }";
-            statusText.text = $"ユーザー数: {PhotonNetwork.countOfPlayers}, 部屋数: {PhotonNetwork.countOfRooms}";
+            messageText.text = @"マッチング中です" + ProgressDot;
+        }
+        if (PhotonNetwork.inRoom) {
+            if (PhotonNetwork.room.PlayerCount > 1) {
+                statusText.text = @"マッチング相手: " + PhotonNetwork.otherPlayers[0].NickName;
+            } else {
+                statusText.text = @"あなた: " + PhotonNetwork.playerName;
+            }
+        } else {
+            statusText.text = @"接続中";
         }
     }
 
-    // We have two options here: we either joined(by title, list or random) or created a room.
+    private IEnumerator requestJoinRandomRoom() {
+        while (!PhotonNetwork.connectedAndReady) {
+            yield return new WaitForEndOfFrame();
+        };
+        PhotonNetwork.JoinRandomRoom();
+    }
+
+    public void StartMatching() {
+        startedMatching = true;
+        StartCoroutine(requestJoinRandomRoom());
+    }
+
+    public void OnPhotonPlayerDisconnected(PhotonPlayer player) {
+        Debug.Log($"A player(id: { player.ID }) has left room.");
+    }
+
+    public void OnPhotonPlayerConnected(PhotonPlayer player) {
+        Debug.Log($"Joined player(id: { player.ID }) in this room.");
+    }
+
     public void OnJoinedRoom() {
         Debug.Log("OnJoinedRoom");
     }
 
     public void OnJoinedLobby() {
         Debug.Log("OnJoinedLobby");
-        PhotonNetwork.JoinRandomRoom();
     }
 
     public void OnPhotonCreateRoomFailed() {
@@ -72,8 +100,7 @@ public class MatchingManager : MonoBehaviour {
 
     public void OnPhotonRandomJoinFailed() {
         Debug.Log("OnPhotonRandomJoinFailed");
-        var roomOptions = new RoomOptions { MaxPlayers = 2 };
-        PhotonNetwork.CreateRoom(null, roomOptions, null);
+        PhotonNetwork.CreateRoom("", new RoomOptions{ MaxPlayers = 2 }, null);
     }
 
     public void OnCreatedRoom() {
